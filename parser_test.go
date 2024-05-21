@@ -8,6 +8,7 @@ import (
 )
 
 var secondParser = NewParser(Second | Minute | Hour | Dom | Month | DowOptional | Descriptor)
+var yearParser = NewParser(Minute | Hour | Dom | Month | Dow | Year | Descriptor)
 
 func TestRange(t *testing.T) {
 	zero := uint64(0)
@@ -168,6 +169,7 @@ func TestParseSchedule(t *testing.T) {
 				Location: time.Local,
 			},
 		},
+		{yearParser, "0 0 21 12 * 2012", doom(time.Local)},
 	}
 
 	for _, c := range entries {
@@ -214,43 +216,43 @@ func TestNormalizeFields(t *testing.T) {
 			"AllFields_NoOptional",
 			[]string{"0", "5", "*", "*", "*", "*"},
 			Second | Minute | Hour | Dom | Month | Dow | Descriptor,
-			[]string{"0", "5", "*", "*", "*", "*"},
+			[]string{"0", "5", "*", "*", "*", "*", "*"},
 		},
 		{
 			"AllFields_SecondOptional_Provided",
 			[]string{"0", "5", "*", "*", "*", "*"},
 			SecondOptional | Minute | Hour | Dom | Month | Dow | Descriptor,
-			[]string{"0", "5", "*", "*", "*", "*"},
+			[]string{"0", "5", "*", "*", "*", "*", "*"},
 		},
 		{
 			"AllFields_SecondOptional_NotProvided",
 			[]string{"5", "*", "*", "*", "*"},
 			SecondOptional | Minute | Hour | Dom | Month | Dow | Descriptor,
-			[]string{"0", "5", "*", "*", "*", "*"},
+			[]string{"0", "5", "*", "*", "*", "*", "*"},
 		},
 		{
 			"SubsetFields_NoOptional",
 			[]string{"5", "15", "*"},
 			Hour | Dom | Month,
-			[]string{"0", "0", "5", "15", "*", "*"},
+			[]string{"0", "0", "5", "15", "*", "*", "*"},
 		},
 		{
 			"SubsetFields_DowOptional_Provided",
 			[]string{"5", "15", "*", "4"},
 			Hour | Dom | Month | DowOptional,
-			[]string{"0", "0", "5", "15", "*", "4"},
+			[]string{"0", "0", "5", "15", "*", "4", "*"},
 		},
 		{
 			"SubsetFields_DowOptional_NotProvided",
 			[]string{"5", "15", "*"},
 			Hour | Dom | Month | DowOptional,
-			[]string{"0", "0", "5", "15", "*", "*"},
+			[]string{"0", "0", "5", "15", "*", "*", "*"},
 		},
 		{
 			"SubsetFields_SecondOptional_NotProvided",
 			[]string{"5", "15", "*"},
 			SecondOptional | Hour | Dom | Month,
-			[]string{"0", "0", "5", "15", "*", "*"},
+			[]string{"0", "0", "5", "15", "*", "*", "*"},
 		},
 	}
 
@@ -320,7 +322,7 @@ func TestStandardSpecSchedule(t *testing.T) {
 	}{
 		{
 			expr:     "5 * * * *",
-			expected: &SpecSchedule{1 << seconds.min, 1 << 5, all(hours), all(dom), all(months), all(dow), time.Local},
+			expected: &SpecSchedule{1 << seconds.min, 1 << 5, all(hours), all(dom), all(months), all(dow), nil, time.Local},
 		},
 		{
 			expr:     "@every 5m",
@@ -359,15 +361,15 @@ func TestNoDescriptorParser(t *testing.T) {
 }
 
 func every5min(loc *time.Location) *SpecSchedule {
-	return &SpecSchedule{1 << 0, 1 << 5, all(hours), all(dom), all(months), all(dow), loc}
+	return &SpecSchedule{1 << 0, 1 << 5, all(hours), all(dom), all(months), all(dow), nil, loc}
 }
 
 func every5min5s(loc *time.Location) *SpecSchedule {
-	return &SpecSchedule{1 << 5, 1 << 5, all(hours), all(dom), all(months), all(dow), loc}
+	return &SpecSchedule{1 << 5, 1 << 5, all(hours), all(dom), all(months), all(dow), nil, loc}
 }
 
 func midnight(loc *time.Location) *SpecSchedule {
-	return &SpecSchedule{1, 1, 1, all(dom), all(months), all(dow), loc}
+	return &SpecSchedule{1, 1, 1, all(dom), all(months), all(dow), nil, loc}
 }
 
 func annual(loc *time.Location) *SpecSchedule {
@@ -380,4 +382,8 @@ func annual(loc *time.Location) *SpecSchedule {
 		Dow:      all(dow),
 		Location: loc,
 	}
+}
+
+func doom(loc *time.Location) *SpecSchedule {
+	return &SpecSchedule{1, 1, 1, 1 << 21, 1 << 12, all(dow), map[int]struct{}{2012: {}}, loc}
 }

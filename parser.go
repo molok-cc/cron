@@ -2,6 +2,7 @@ package cron
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"strconv"
 	"strings"
@@ -23,6 +24,7 @@ const (
 	Month                                  // Month field, default *
 	Dow                                    // Day of week field, default *
 	DowOptional                            // Optional day of week field, default *
+	Year                                   //
 	Descriptor                             // Allow descriptors such as @monthly, @weekly, etc.
 )
 
@@ -33,12 +35,14 @@ var places = []ParseOption{
 	Dom,
 	Month,
 	Dow,
+	Year,
 }
 
 var defaults = []string{
 	"0",
 	"0",
 	"0",
+	"*",
 	"*",
 	"*",
 	"*",
@@ -56,18 +60,17 @@ type Parser struct {
 //
 // Examples
 //
-//  // Standard parser without descriptors
-//  specParser := NewParser(Minute | Hour | Dom | Month | Dow)
-//  sched, err := specParser.Parse("0 0 15 */3 *")
+//	// Standard parser without descriptors
+//	specParser := NewParser(Minute | Hour | Dom | Month | Dow)
+//	sched, err := specParser.Parse("0 0 15 */3 *")
 //
-//  // Same as above, just excludes time fields
-//  specParser := NewParser(Dom | Month | Dow)
-//  sched, err := specParser.Parse("15 */3 *")
+//	// Same as above, just excludes time fields
+//	subsParser := NewParser(Dom | Month | Dow)
+//	sched, err := specParser.Parse("15 */3 *")
 //
-//  // Same as above, just makes Dow optional
-//  specParser := NewParser(Dom | Month | DowOptional)
-//  sched, err := specParser.Parse("15 */3")
-//
+//	// Same as above, just makes Dow optional
+//	subsParser := NewParser(Dom | Month | DowOptional)
+//	sched, err := specParser.Parse("15 */3")
 func NewParser(options ParseOption) Parser {
 	optionals := 0
 	if options&DowOptional > 0 {
@@ -140,6 +143,10 @@ func (p Parser) Parse(spec string) (Schedule, error) {
 	if err != nil {
 		return nil, err
 	}
+	year, err := getFieldSet(fields[6], years)
+	if err != nil {
+		return nil, err
+	}
 
 	return &SpecSchedule{
 		Second:   second,
@@ -148,6 +155,7 @@ func (p Parser) Parse(spec string) (Schedule, error) {
 		Dom:      dayofmonth,
 		Month:    month,
 		Dow:      dayofweek,
+		Year:     year,
 		Location: loc,
 	}, nil
 }
@@ -247,7 +255,9 @@ func getField(field string, r bounds) (uint64, error) {
 }
 
 // getRange returns the bits indicated by the given expression:
-//   number | number "-" number [ "/" number ]
+//
+//	number | number "-" number [ "/" number ]
+//
 // or error parsing range.
 func getRange(expr string, r bounds) (uint64, error) {
 	var (
@@ -315,6 +325,95 @@ func getRange(expr string, r bounds) (uint64, error) {
 	}
 
 	return getBits(start, end, step) | extra, nil
+}
+
+func getFieldSet(field string, r bounds) (map[int]struct{}, error) {
+	var set map[int]struct{}
+	ranges := strings.FieldsFunc(field, func(r rune) bool { return r == ',' })
+	for _, expr := range ranges {
+		set1, err := getRangeSet(expr, r)
+		if err != nil {
+			return set, err
+		}
+		if set == nil && set1 != nil {
+			set = make(map[int]struct{})
+		}
+		maps.Copy(set, set1)
+	}
+	return set, nil
+}
+
+func getRangeSet(expr string, r bounds) (map[int]struct{}, error) {
+	var (
+		start, end, step uint
+		rangeAndStep     = strings.Split(expr, "/")
+		lowAndHigh       = strings.Split(rangeAndStep[0], "-")
+		singleDigit      = len(lowAndHigh) == 1
+		err              error
+	)
+
+	var set map[int]struct{}
+	if lowAndHigh[0] == "*" || lowAndHigh[0] == "?" {
+		return nil, nil
+	} else {
+		start, err = parseIntOrName(lowAndHigh[0], r.names)
+		if err != nil {
+			return nil, err
+		}
+		switch len(lowAndHigh) {
+		case 1:
+			end = start
+		case 2:
+			end, err = parseIntOrName(lowAndHigh[1], r.names)
+			if err != nil {
+				return nil, err
+			}
+		default:
+			return nil, fmt.Errorf("too many hyphens: %s", expr)
+		}
+	}
+
+	switch len(rangeAndStep) {
+	case 1:
+		step = 1
+	case 2:
+		step, err = mustParseInt(rangeAndStep[1])
+		if err != nil {
+			return nil, err
+		}
+
+		// Special handling: "N/step" means "N-max/step".
+		if singleDigit {
+			end = r.max
+		}
+		if step > 1 {
+			set = nil
+		}
+	default:
+		return nil, fmt.Errorf("too many slashes: %s", expr)
+	}
+
+	if start < r.min {
+		return nil, fmt.Errorf("beginning of range (%d) below minimum (%d): %s", start, r.min, expr)
+	}
+	if end > r.max {
+		return nil, fmt.Errorf("end of range (%d) above maximum (%d): %s", end, r.max, expr)
+	}
+	if start > end {
+		return nil, fmt.Errorf("beginning of range (%d) beyond end of range (%d): %s", start, end, expr)
+	}
+	if step == 0 {
+		return nil, fmt.Errorf("step of range should be a positive number: %s", expr)
+	}
+
+	for y := start; y <= end; y += step {
+		if set == nil {
+			set = make(map[int]struct{})
+		}
+		set[int(y)] = struct{}{}
+	}
+
+	return set, nil
 }
 
 // parseIntOrName returns the (possibly-named) integer contained in expr.
@@ -428,6 +527,15 @@ func parseDescriptor(descriptor string, loc *time.Location) (Schedule, error) {
 			return nil, fmt.Errorf("failed to parse duration %s: %s", descriptor, err)
 		}
 		return Every(duration), nil
+	}
+
+	const once = "@once "
+	if strings.HasPrefix(descriptor, once) {
+		time, err := time.Parse(time.RFC3339, descriptor[len(once):])
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse duration %s: %s", descriptor, err)
+		}
+		return Once(time), nil
 	}
 
 	return nil, fmt.Errorf("unrecognized descriptor: %s", descriptor)

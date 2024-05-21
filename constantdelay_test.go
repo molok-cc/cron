@@ -52,3 +52,12 @@ func TestConstantDelayNext(t *testing.T) {
 		}
 	}
 }
+
+func TestOnceNext(t *testing.T) {
+	now := time.Now()
+	expected := now.AddDate(1, 2, 3)
+	actual := Once(expected).Next(now)
+	if actual != expected {
+		t.Errorf("(expected) %v != %v (actual)", expected, actual)
+	}
+}

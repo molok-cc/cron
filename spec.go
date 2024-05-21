@@ -1,11 +1,15 @@
 package cron
 
-import "time"
+import (
+	"slices"
+	"time"
+)
 
 // SpecSchedule specifies a duty cycle (to the second granularity), based on a
 // traditional crontab specification. It is computed initially and stored as bit sets.
 type SpecSchedule struct {
 	Second, Minute, Hour, Dom, Month, Dow uint64
+	Year                                  map[int]struct{}
 
 	// Override location for this schedule.
 	Location *time.Location
@@ -46,6 +50,7 @@ var (
 		"fri": 5,
 		"sat": 6,
 	}}
+	years = bounds{1970, 2099, nil}
 )
 
 const (
@@ -84,11 +89,33 @@ func (s *SpecSchedule) Next(t time.Time) time.Time {
 	// This flag indicates whether a field has been incremented.
 	added := false
 
+	var years []int
+	if s.Year != nil {
+		years = make([]int, 0, len(s.Year))
+		for year := range s.Year {
+			years = append(years, year)
+		}
+		slices.Sort(years)
+	}
+
 	// If no time is found within five years, return zero.
 	yearLimit := t.Year() + 5
+	var yearIndex int
 
 WRAP:
-	if t.Year() > yearLimit {
+	if years != nil {
+		for t.Year() != years[yearIndex] {
+			year := years[yearIndex]
+			if t.Year() < year {
+				t = t.AddDate(year-t.Year(), 0, 0)
+			} else {
+				yearIndex++
+				if yearIndex >= len(years) {
+					return time.Time{}
+				}
+			}
+		}
+	} else if t.Year() > yearLimit {
 		return time.Time{}
 	}
 

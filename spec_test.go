@@ -298,3 +298,30 @@ func TestSlash0NoHang(t *testing.T) {
 		t.Error("expected an error on 0 increment")
 	}
 }
+
+func TestNextWithYear(t *testing.T) {
+	runs := []struct {
+		time, spec string
+		expected   string
+	}{
+		// Failing tests
+		{"2016-01-03T13:09:03+0530", "14 14 * * * 2024", "2024-01-03T14:14:00+0530"},
+		{"2016-01-03T04:09:03+0530", "14 14 * * ? 2024", "2024-01-03T14:14:00+0530"},
+
+		// Passing tests
+		{"2016-01-03T14:09:03+0530", "14 14 * * * 2024", "2024-01-03T14:14:00+0530"},
+		{"2016-01-03T14:00:00+0530", "14 14 * * ? 2024", "2024-01-03T14:14:00+0530"},
+	}
+	for _, c := range runs {
+		sched, err := yearParser.Parse(c.spec)
+		if err != nil {
+			t.Error(err)
+			continue
+		}
+		actual := sched.Next(getTimeTZ(c.time))
+		expected := getTimeTZ(c.expected)
+		if !actual.Equal(expected) {
+			t.Errorf("%s, \"%s\": (expected) %v != %v (actual)", c.time, c.spec, expected, actual)
+		}
+	}
+}
