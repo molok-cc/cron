@@ -205,6 +205,27 @@ func TestOptionalSecondSchedule(t *testing.T) {
 	}
 }
 
+func TestOptionalYearSchedule(t *testing.T) {
+	parser := NewParser(Minute | Hour | Dom | Month | Dow | YearOptional | Descriptor)
+	entries := []struct {
+		expr     string
+		expected Schedule
+	}{
+		{"5 * * * * *", every5min(time.Local)},
+		{"5 * * * *", every5min(time.Local)},
+	}
+
+	for _, c := range entries {
+		actual, err := parser.Parse(c.expr)
+		if err != nil {
+			t.Errorf("%s => unexpected error %v", c.expr, err)
+		}
+		if !reflect.DeepEqual(actual, c.expected) {
+			t.Errorf("%s => expected %b, got %b", c.expr, c.expected, actual)
+		}
+	}
+}
+
 func TestNormalizeFields(t *testing.T) {
 	tests := []struct {
 		name     string

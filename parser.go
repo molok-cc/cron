@@ -25,6 +25,7 @@ const (
 	Dow                                    // Day of week field, default *
 	DowOptional                            // Optional day of week field, default *
 	Year                                   //
+	YearOptional                           //
 	Descriptor                             // Allow descriptors such as @monthly, @weekly, etc.
 )
 
@@ -77,6 +78,9 @@ func NewParser(options ParseOption) Parser {
 		optionals++
 	}
 	if options&SecondOptional > 0 {
+		optionals++
+	}
+	if options&YearOptional > 0 {
 		optionals++
 	}
 	if optionals > 1 {
@@ -176,6 +180,10 @@ func normalizeFields(fields []string, options ParseOption) ([]string, error) {
 		options |= Dow
 		optionals++
 	}
+	if options&YearOptional > 0 {
+		options |= Year
+		optionals++
+	}
 	if optionals > 1 {
 		return nil, fmt.Errorf("multiple optionals may not be configured")
 	}
@@ -204,6 +212,8 @@ func normalizeFields(fields []string, options ParseOption) ([]string, error) {
 			fields = append(fields, defaults[5]) // TODO: improve access to default
 		case options&SecondOptional > 0:
 			fields = append([]string{defaults[0]}, fields...)
+		case options&YearOptional > 0:
+			fields = append(fields, defaults[6])
 		default:
 			return nil, fmt.Errorf("unknown optional field")
 		}
